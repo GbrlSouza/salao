@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agendamento Salão de Festas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vue@3.2.47/dist/vue.global.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .fade-enter-active, .fade-leave-active {
+            transition: opacity 0.3s ease;
+        }
+        .fade-enter-from, .fade-leave-to {
+            opacity: 0;
+        }
+        .slide-enter-active, .slide-leave-active {
+            transition: all 0.3s ease-out;
+        }
+        .slide-enter-from {
+            opacity: 0;
+            transform: translateY(-20px);
+        }
+        .slide-leave-to {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        .calendar-day {
+            aspect-ratio: 1;
+        }
+        .calendar-day:hover:not(.disabled) {
+            background-color: #f0f9ff;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div id="app" class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold text-indigo-800">Salão de Festas do Condomínio</h1>
+            <p class="text-gray-600">Agende seu evento com facilidade</p>
+        </header>
+
+        <!-- Main Content -->
+        <main>
+            <!-- Action Buttons -->
+            <div class="flex flex-wrap gap-4 mb-8">
+                <button @click="openScheduleModal" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-lg flex items-center gap-2 transition">
+                    <i class="fas fa-calendar-plus"></i> Novo Agendamento
+                </button>
+                <button @click="openCalendarModal" class="bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 px-6 py-3 rounded-lg flex items-center gap-2 transition">
+                    <i class="fas fa-calendar-alt"></i> Ver Calendário
+                </button>
+                <button @click="openMyBookingsModal" class="bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 px-6 py-3 rounded-lg flex items-center gap-2 transition">
+                    <i class="fas fa-list"></i> Meus Agendamentos
+                </button>
+            </div>
+
+            <!-- Current Month Overview -->
+            <div class="bg-white rounded-lg shadow p-6 mb-8">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold text-gray-800">Reservas deste Mês</h2>
+                    <span class="text-gray-500">{{ currentMonthName }} {{ currentYear }}</span>
+                </div>
+                
+                <div class="grid grid-cols-7 gap-2 mb-4">
+                    <div v-for="day in ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']" 
+                         class="text-center font-medium text-gray-500 py-2">
+                        {{ day }}
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-7 gap-2">
+                    <div v-for="day in calendarDays" 
+                         :key="day.date"
+                         @click="day.disabled ? null : openDayDetails(day)"
+                         :class="[
+                             'calendar-day p-2 rounded-lg text-center cursor-pointer border',
+                             day.isToday ? 'border-indigo-400 bg-indigo-50' : 'border-transparent',
+                             day.disabled ? 'text-gray-300 disabled' : 'text-gray-700',
+                             day.hasBooking ? 'bg-green-50' : ''
+                         ]">
+                        <div class="font-medium">{{ day.day }}</div>
+                        <div v-if="day.hasBooking" class="text-xs text-green-600 truncate">
+                            {{ day.bookingCount }} reserva{{ day.bookingCount > 1 ? 's' : '' }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Schedule Modal -->
+        <transition name="fade">
+            <div v-if="showScheduleModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                <transition name="slide">
+                    <div class="bg-white rounded-lg shadow-xl w-full max-w-md">
+                        <div class="p-6">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-xl font-semibold text-gray-800">Novo Agendamento</h3>
+                                <button @click="closeScheduleModal" class="text-gray-400 hover:text-gray-500">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                            
+                            <form @submit.prevent="submitBooking">
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Data</label>
+                                        <input v-model="newBooking.date" type="date" 
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                               :min="today" required>
+                                    </div>
+                                    
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-700 mb-1">Hora Início</label>
+                                            <select v-model="newBooking.startTime" 
+                                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                                                <option v-for="time in availableTimes" :value="time">{{ time }}</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-700 mb-1">Hora Fim</label>
+                                            <select v-model="newBooking.endTime" 
+                                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                                                <option v-for="time in availableTimes" :value="time">{{ time }}</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de Evento</label>
+                                        <select v-model="newBooking.eventType" 
+                                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                                            <option value="aniversario">Aniversário</option>
+                                            <option value="reuniao">Reunião</option>
+                                            <option value="festa">Festa</option>
+                                            <option value="outro">Outro</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Responsável</label>
+                                        <input v-model="newBooking.responsible" type="text" 
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Apartamento</label>
+                                        <input v-model="newBooking.apartment" type="text" 
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Observações</label>
+                                        <textarea v-model="newBooking.notes" 
+                                                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500" rows="3"></textarea>
+                                    </div>
+                                </div>
+                                
+                                <div class="mt-6 flex justify-end gap-3">
+                                    <button type="button" @click="closeScheduleModal" 
+                                            class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">
+                                        Cancelar
+                                    </button>
+                                    <button type="submit" 
+                                            class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
+                                        Confirmar Reserva
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </transition>
+            </div>
+        </transition>
+
+        <!-- Calendar Modal -->
+        <transition name="fade">
+            <div v-if="showCalendarModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                <transition name="slide">
+                    <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl">
+                        <div class="p-6">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-xl font-semibold text-gray-800">Calendário de Reservas</h3>
+                                <button @click="closeCalendarModal" class="text-gray-400 hover:text-gray-500">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                            
+                            <div class="flex justify-between items-center mb-6">
+                                <button @click="prevMonth" class="p-2 rounded-full hover:bg-gray-100">
+                                    <i class="fas fa-chevron-left"></i>
+                                </button>
+                                <h4 class="text-lg font-medium">{{ calendarViewMonthName }} {{ calendarViewYear }}</h4>
+                                <button @click="nextMonth" class="p-2 rounded-full hover:bg-gray-100">
+                                    <i class="fas fa-chevron-right"></i>
+                                </button>
+                            </div>
+                            
+                            <div class="grid grid-cols-7 gap-1 mb-2">
+                                <div v-for="day in ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']" 
+                                     class="text-center font-medium text-gray-500 py-2 text-sm">
+                                    {{ day }}
+                                </div>
+                            </div>
+                            
+                            <div class="grid grid-cols-7 gap-1">
+                                <div v-for="day in calendarViewDays" 
+                                     :key="day.date"
+                                     @click="day.disabled ? null : openDayDetails(day)"
+                                     :class="[
+                                         'calendar-day p-2 rounded-lg text-center cursor-pointer border',
+                                         day.isToday ? 'border-indigo-400 bg-indigo-50' : 'border-transparent',
+                                         day.disabled ? 'text-gray-300 disabled' : 'text-gray-700',
+                                         day.hasBooking ? 'bg-green-50' : ''
+                                     ]">
+                                    <div class="font-medium">{{ day.day }}</div>
+                                    <div v-if="day.hasBooking" class="text-xs text-green-600 truncate">
+                                        {{ day.bookingCount }} reserva{{ day.bookingCount > 1 ? 's' : '' }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </transition>
+            </div>
+        </transition>
+
+        <!-- Day Details Modal -->
+        <transition name="fade">
+            <div v-if="showDayDetailsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                <transition name="slide">
+                    <div class="bg-white rounded-lg shadow-xl w-full max-w-md">
+                        <div class="p-6">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-xl font-semibold text-gray-800">Reservas em {{ selectedDay.date }}</h3>
+                                <button @click="closeDayDetailsModal" class="text-gray-400 hover:text-gray-500">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                            
+                            <div v-if="dayBookings.length === 0" class="text-center py-8 text-gray-500">
+                                Nenhuma reserva para este dia
+                            </div>
+                            
+                            <div v-else class="space-y-4 max-h-96 overflow-y-auto">
+                                <div v-for="booking in dayBookings" 
+                                     class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                                    <div class="flex justify-between">
+                                        <div>
+                                            <h4 class="font-medium">{{ booking.eventTypeDisplay }}</h4>
+                                            <p class="text-sm text-gray-600">{{ booking.responsible }} (Apto {{ booking.apartment }})</p>
+                                        </div>
+                                        <div class="text-right">
+                                            <span class="text-sm font-medium">{{ booking.startTime }} - {{ booking.endTime }}</span>
+                                        </div>
+                                    </div>
+                                    <div v-if="booking.notes" class="mt-2 text-sm text-gray-600">
+                                        <p>{{ booking.notes }}</p>
+                                    </div>
+                                    <div v-if="isMyBooking(booking)" class="mt-3 flex justify-end">
+                                        <button @click="confirmCancelBooking(booking)" 
+                                                class="text-xs text-red-600 hover:text-red-800">
+                                            Cancelar Reserva
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-6 flex justify-end">
+                                <button @click="closeDayDetailsModal" 
+                                        class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
+                                    Fechar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </transition>
+            </div>
+        </transition>
+
+        <!-- My Bookings Modal -->
+        <transition name="fade">
+            <div v-if="showMyBookingsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                <transition name="slide">
+                    <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl">
+                        <div class="p-6">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-xl font-semibold text-gray-800">Minhas Reservas</h3>
+                                <button @click="closeMyBookingsModal" class="text-gray-400 hover:text-gray-500">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                            
+                            <div v-if="myBookings.length === 0" class="text-center py-8 text-gray-500">
+                                Você não possui reservas no momento
+                            </div>
+                            
+                            <div v-else class="space-y-3 max-h-96 overflow-y-auto">
+                                <div v-for="booking in myBookings" 
+                                     class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                                    <div class="flex justify-between items-start">
+                                        <div>
+                                            <h4 class="font-medium">{{ booking.eventTypeDisplay }}</h4>
+                                            <p class="text-sm text-gray-600">{{ booking.date }}</p>
+                                        </div>
+                                        <div class="text-right">
+                                            <span class="text-sm font-medium">{{ booking.startTime }} - {{ booking.endTime }}</span>
+                                        </div>
+                                    </div>
+                                    <div v-if="booking.notes" class="mt-2 text-sm text-gray-600">
+                                        <p>{{ booking.notes }}</p>
+                                    </div>
+                                    <div class="mt-3 flex justify-end gap-2">
+                                        <button @click="confirmCancelBooking(booking)" 
+                                                class="px-3 py-1 text-sm text-red-600 border border-red-200 rounded hover:bg-red-50">
+                                            Cancelar
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-6 flex justify-end">
+                                <button @click="closeMyBookingsModal" 
+                                        class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
+                                    Fechar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </transition>
+            </div>
+        </transition>
+
+        <!-- Confirm Cancel Modal -->
+        <transition name="fade">
+            <div v-if="showCancelModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                <transition name="slide">
+                    <div class="bg-white rounded-lg shadow-xl w-full max-w-md">
+                        <div class="p-6">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-xl font-semibold text-gray-800">Cancelar Reserva</h3>
+                                <button @click="closeCancelModal" class="text-gray-400 hover:text-gray-500">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                            
+                            <p class="mb-6">Tem certeza que deseja cancelar a reserva de <strong>{{ bookingToCancel.eventTypeDisplay }}</strong> no dia {{ bookingToCancel.date }} das {{ bookingToCancel.startTime }} às {{ bookingToCancel.endTime }}?</p>
+                            
+                            <div class="flex justify-end gap-3">
+                                <button @click="closeCancelModal" 
+                                        class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">
+                                    Voltar
+                                </button>
+                                <button @click="cancelBooking" 
+                                        class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">
+                                    Confirmar Cancelamento
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </transition>
+            </div>
+        </transition>
+
+        <!-- Success Notification -->
+        <transition name="fade">
+            <div v-if="showSuccessNotification" class="fixed bottom-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 z-50">
+                <i class="fas fa-check-circle"></i>
+                <span>{{ successMessage }}</span>
+            </div>
+        </transition>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted } = Vue;
+        
+        createApp({
+            setup() {
+                // Current date info
+                const today = new Date().toISOString().split('T')[0];
+                const currentDate = ref(new Date());
+                const currentMonth = computed(() => currentDate.value.getMonth());
+                const currentYear = computed(() => currentDate.value.getFullYear());
+                const currentMonthName = computed(() => currentDate.value.toLocaleString('pt-BR', { month: 'long' }));
+                
+                // Calendar view for modal
+                const calendarViewDate = ref(new Date());
+                const calendarViewMonth = computed(() => calendarViewDate.value.getMonth());
+                const calendarViewYear = computed(() => calendarViewDate.value.getFullYear());
+                const calendarViewMonthName = computed(() => calendarViewDate.value.toLocaleString('pt-BR', { month: 'long' }));
+                
+                // Modals state
+                const showScheduleModal = ref(false);
+                const showCalendarModal = ref(false);
+                const showDayDetailsModal = ref(false);
+                const showMyBookingsModal = ref(false);
+                const showCancelModal = ref(false);
+                const showSuccessNotification = ref(false);
+                const successMessage = ref('');
+                
+                // Selected day for details
+                const selectedDay = ref({});
+                
+                // Booking to cancel
+                const bookingToCancel = ref({});
+                
+                // New booking form
+                const newBooking = ref({
+                    date: today,
+                    startTime: '14:00',
+                    endTime: '18:00',
+                    eventType: 'aniversario',
+                    responsible: '',
+                    apartment: '',
+                    notes: ''
+                });
+                
+                // Available times for booking
+                const availableTimes = ref([
+                    '08:00', '09:00', '10:00', '11:00', '12:00', 
+                    '13:00', '14:00', '15:00', '16:00', '17:00', 
+                    '18:00', '19:00', '20:00', '21:00', '22:00'
+                ]);
+                
+                // Event type display names
+                const eventTypes = ref({
+                    aniversario: 'Aniversário',
+                    reuniao: 'Reunião',
+                    festa: 'Festa',
+                    outro: 'Outro'
+                });
+                
+                // Sample bookings data (in a real app, this would come from an API)
+                const bookings = ref([
+                    {
+                        id: 1,
+                        date: new Date().toISOString().split('T')[0],
+                        startTime: '14:00',
+                        endTime: '18:00',
+                        eventType: 'aniversario',
+                        responsible: 'Maria Silva',
+                        apartment: '101',
+                        notes: 'Aniversário de 10 anos do João'
+                    },
+                    {
+                        id: 2,
+                        date: new Date(new Date().setDate(new Date().getDate() + 2)).toISOString().split('T')[0],
+                        startTime: '19:00',
+                        endTime: '22:00',
+                        eventType: 'reuniao',
+                        responsible: 'Carlos Souza',
+                        apartment: '205',
+                        notes: 'Reunião de condomínio'
+                    },
+                    {
+                        id: 3,
+                        date: new Date(new Date().setDate(new Date().getDate() + 5)).toISOString().split('T')[0],
+                        startTime: '15:00',
+                        endTime: '20:00',
+                        eventType: 'festa',
+                        responsible: 'Ana Oliveira',
+                        apartment: '302',
+                        notes: 'Festa junina'
+                    }
+                ]);
+                
+                // Current user (simulated)
+                const currentUser = ref({
+                    name: 'Maria Silva',
+                    apartment: '101'
+                });
+                
+                // Generate days for the current month overview
+                const calendarDays = computed(() => {
+                    const year = currentYear.value;
+                    const month = currentMonth.value;
+                    
+                    const firstDay = new Date(year, month, 1);
+                    const lastDay = new Date(year, month + 1, 0);
+                    
+                    const daysInMonth = lastDay.getDate();
+                    const startingDayOfWeek = firstDay.getDay();
+                    
+                    const days = [];
+                    
+                    // Add empty days for the beginning of the week
+                    for (let i = 0; i < startingDayOfWeek; i++) {
+                        days.push({
+                            day: '',
+                            date: '',
+                            disabled: true,
+                            isToday: false,
+                            hasBooking: false,
+                            bookingCount: 0
+                        });
+                    }
+                    
+                    // Add actual days of the month
+                    for (let i = 1; i <= daysInMonth; i++) {
+                        const date = new Date(year, month, i).toISOString().split('T')[0];
+                        const isToday = date === today;
+                        const dayBookings = bookings.value.filter(b => b.date === date);
+                        const hasBooking = dayBookings.length > 0;
+                        
+                        days.push({
+                            day: i,
+                            date: date,
+                            disabled: false,
+                            isToday: isToday,
+                            hasBooking: hasBooking,
+                            bookingCount: dayBookings.length
+                        });
+                    }
+                    
+                    return days;
+                });
+                
+                // Generate days for the calendar modal view
+                const calendarViewDays = computed(() => {
+                    const year = calendarViewYear.value;
+                    const month = calendarViewMonth.value;
+                    
+                    const firstDay = new Date(year, month, 1);
+                    const lastDay = new Date(year, month + 1, 0);
+                    
+                    const daysInMonth = lastDay.getDate();
+                    const startingDayOfWeek = firstDay.getDay();
+                    
+                    const days = [];
+                    
+                    // Add empty days for the beginning of the week
+                    for (let i = 0; i < startingDayOfWeek; i++) {
+                        days.push({
+                            day: '',
+                            date: '',
+                            disabled: true,
+                            isToday: false,
+                            hasBooking: false,
+                            bookingCount: 0
+                        });
+                    }
+                    
+                    // Add actual days of the month
+                    for (let i = 1; i <= daysInMonth; i++) {
+                        const date = new Date(year, month, i).toISOString().split('T')[0];
+                        const isToday = date === today;
+                        const dayBookings = bookings.value.filter(b => b.date === date);
+                        const hasBooking = dayBookings.length > 0;
+                        
+                        days.push({
+                            day: i,
+                            date: date,
+                            disabled: false,
+                            isToday: isToday,
+                            hasBooking: hasBooking,
+                            bookingCount: dayBookings.length
+                        });
+                    }
+                    
+                    // Add empty days to complete the last week
+                    const totalDays = startingDayOfWeek + daysInMonth;
+                    const remainingDays = 7 - (totalDays % 7);
+                    if (remainingDays < 7) {
+                        for (let i = 0; i < remainingDays; i++) {
+                            days.push({
+                                day: '',
+                                date: '',
+                                disabled: true,
+                                isToday: false,
+                                hasBooking: false,
+                                bookingCount: 0
+                            });
+                        }
+                    }
+                    
+                    return days;
+                });
+                
+                // Filter bookings for the selected day
+                const dayBookings = computed(() => {
+                    if (!selectedDay.value.date) return [];
+                    
+                    return bookings.value
+                        .filter(b => b.date === selectedDay.value.date)
+                        .map(b => ({
+                            ...b,
+                            eventTypeDisplay: eventTypes.value[b.eventType] || b.eventType
+                        }));
+                });
+                
+                // Filter bookings for the current user
+                const myBookings = computed(() => {
+                    return bookings.value
+                        .filter(b => 
+                            b.responsible === currentUser.value.name && 
+                            b.apartment === currentUser.value.apartment
+                        )
+                        .map(b => ({
+                            ...b,
+                            eventTypeDisplay: eventTypes.value[b.eventType] || b.eventType
+                        }))
+                        .sort((a, b) => new Date(a.date) - new Date(b.date));
+                });
+                
+                // Check if a booking belongs to the current user
+                const isMyBooking = (booking) => {
+                    return (
+                        booking.responsible === currentUser.value.name && 
+                        booking.apartment === currentUser.value.apartment
+                    );
+                };
+                
+                // Modal control functions
+                const openScheduleModal = () => {
+                    showScheduleModal.value = true;
+                };
+                
+                const closeScheduleModal = () => {
+                    showScheduleModal.value = false;
+                    resetNewBooking();
+                };
+                
+                const openCalendarModal = () => {
+                    showCalendarModal.value = true;
+                };
+                
+                const closeCalendarModal = () => {
+                    showCalendarModal.value = false;
+                };
+                
+                const openDayDetails = (day) => {
+                    selectedDay.value = day;
+                    showDayDetailsModal.value = true;
+                };
+                
+                const closeDayDetailsModal = () => {
+                    showDayDetailsModal.value = false;
+                    selectedDay.value = {};
+                };
+                
+                const openMyBookingsModal = () => {
+                    showMyBookingsModal.value = true;
+                };
+                
+                const closeMyBookingsModal = () => {
+                    showMyBookingsModal.value = false;
+                };
+                
+                const confirmCancelBooking = (booking) => {
+                    bookingToCancel.value = booking;
+                    showCancelModal.value = true;
+                    closeDayDetailsModal();
+                    closeMyBookingsModal();
+                };
+                
+                const closeCancelModal = () => {
+                    showCancelModal.value = false;
+                    bookingToCancel.value = {};
+                };
+                
+                // Calendar navigation
+                const prevMonth = () => {
+                    calendarViewDate.value = new Date(
+                        calendarViewYear.value,
+                        calendarViewMonth.value - 1,
+                        1
+                    );
+                };
+                
+                const nextMonth = () => {
+                    calendarViewDate.value = new Date(
+                        calendarViewYear.value,
+                        calendarViewMonth.value + 1,
+                        1
+                    );
+                };
+                
+                // Reset new booking form
+                const resetNewBooking = () => {
+                    newBooking.value = {
+                        date: today,
+                        startTime: '14:00',
+                        endTime: '18:00',
+                        eventType: 'aniversario',
+                        responsible: currentUser.value.name,
+                        apartment: currentUser.value.apartment,
+                        notes: ''
+                    };
+                };
+                
+                // Submit new booking
+                const submitBooking = () => {
+                    // In a real app, this would be an API call
+                    const newId = bookings.value.length > 0 
+                        ? Math.max(...bookings.value.map(b => b.id)) + 1 
+                        : 1;
+                    
+                    const booking = {
+                        id: newId,
+                        ...newBooking.value,
+                        eventTypeDisplay: eventTypes.value[newBooking.value.eventType] || newBooking.value.eventType
+                    };
+                    
+                    bookings.value.push(booking);
+                    closeScheduleModal();
+                    
+                    // Show success notification
+                    successMessage.value = 'Reserva confirmada com sucesso!';
+                    showSuccessNotification.value = true;
+                    setTimeout(() => {
+                        showSuccessNotification.value = false;
+                    }, 3000);
+                };
+                
+                // Cancel booking
+                const cancelBooking = () => {
+                    bookings.value = bookings.value.filter(b => b.id !== bookingToCancel.value.id);
+                    closeCancelModal();
+                    
+                    // Show success notification
+                    successMessage.value = 'Reserva cancelada com sucesso!';
+                    showSuccessNotification.value = true;
+                    setTimeout(() => {
+                        showSuccessNotification.value = false;
+                    }, 3000);
+                };
+                
+                // Initialize with current user data
+                onMounted(() => {
+                    resetNewBooking();
+                });
+                
+                return {
+                    today,
+                    currentDate,
+                    currentMonth,
+                    currentYear,
+                    currentMonthName,
+                    calendarViewDate,
+                    calendarViewMonth,
+                    calendarViewYear,
+                    calendarViewMonthName,
+                    showScheduleModal,
+                    showCalendarModal,
+                    showDayDetailsModal,
+                    showMyBookingsModal,
+                    showCancelModal,
+                    showSuccessNotification,
+                    successMessage,
+                    selectedDay,
+                    bookingToCancel,
+                    newBooking,
+                    availableTimes,
+                    eventTypes,
+                    bookings,
+                    currentUser,
+                    calendarDays,
+                    calendarViewDays,
+                    dayBookings,
+                    myBookings,
+                    openScheduleModal,
+                    closeScheduleModal,
+                    openCalendarModal,
+                    closeCalendarModal,
+                    openDayDetails,
+                    closeDayDetailsModal,
+                    openMyBookingsModal,
+                    closeMyBookingsModal,
+                    confirmCancelBooking,
+                    closeCancelModal,
+                    prevMonth,
+                    nextMonth,
+                    submitBooking,
+                    cancelBooking,
+                    isMyBooking
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
